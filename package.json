@@ -1,0 +1,23 @@
+{
+  "name": "virtualshop",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "echo 'No lint configuration provided'"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.21",
+    "@vitejs/plugin-react": "^4.3.2",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.0"
+  }
+}

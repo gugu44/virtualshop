@@ -1,0 +1,68 @@
+import { Garment } from '../types';
+
+export const garments: Garment[] = [
+  {
+    id: 'g-top-01',
+    name: '크림 라운드 니트',
+    category: 'top',
+    color: '#f3ede1',
+    accent: '#c0b7a6',
+    description: '따뜻한 질감의 크림색 니트',
+  },
+  {
+    id: 'g-top-02',
+    name: '블루 스트라이프 셔츠',
+    category: 'top',
+    color: '#d9e8ff',
+    accent: '#3a7bd5',
+    description: '얇은 스트라이프 패턴의 셔츠',
+  },
+  {
+    id: 'g-bottom-01',
+    name: '블랙 슬랙스',
+    category: 'bottom',
+    color: '#1f1f1f',
+    accent: '#4f4f4f',
+    description: '일자로 떨어지는 기본 슬랙스',
+  },
+  {
+    id: 'g-bottom-02',
+    name: '라이트 데님 팬츠',
+    category: 'bottom',
+    color: '#c0d7eb',
+    accent: '#6e8ca6',
+    description: '여유로운 워싱이 들어간 데님',
+  },
+  {
+    id: 'g-outer-01',
+    name: '그레이 테일러드 자켓',
+    category: 'outer',
+    color: '#c7c9cc',
+    accent: '#8b9098',
+    description: '가볍게 걸치기 좋은 자켓',
+  },
+  {
+    id: 'g-outer-02',
+    name: '패딩 베스트',
+    category: 'outer',
+    color: '#f5f5f5',
+    accent: '#9c9ea6',
+    description: '레이어드하기 좋은 패딩 베스트',
+  },
+  {
+    id: 'g-acc-01',
+    name: '숄더백',
+    category: 'accessory',
+    color: '#f0e7db',
+    accent: '#b9864d',
+    description: '따뜻한 베이지 컬러 백',
+  },
+  {
+    id: 'g-acc-02',
+    name: '스니커즈',
+    category: 'accessory',
+    color: '#ffffff',
+    accent: '#c2c8d0',
+    description: '데일리한 화이트 스니커즈',
+  },
+];
