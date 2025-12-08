@@ -2,24 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
-import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader";
-import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader";
-import { clone } from "three/examples/jsm/utils/SkeletonUtils";
+import { OrbitControls, GLTFLoader, DRACOLoader, RGBELoader } from "three-stdlib";
+import { SkeletonUtils } from "three-stdlib";
 
 type OutfitOption =
   | {
-      id: string;
-      label: string;
-      kind: "procedural";
-    }
+    id: string;
+    label: string;
+    kind: "procedural";
+  }
   | {
-      id: string;
-      label: string;
-      kind: "glb";
-      url: string;
-    };
+    id: string;
+    label: string;
+    kind: "glb";
+    url: string;
+  };
 
 // Mannequin-style humanoid (rigged) for clothing placement
 const AVATAR_URL =
@@ -34,6 +31,11 @@ const OUTFITS: OutfitOption[] = [
   {
     id: "body-overlay",
     label: "Body Overlay (human-like)",
+    kind: "procedural",
+  },
+  {
+    id: "coat",
+    label: "Coat (procedural)",
     kind: "procedural",
   },
 ];
@@ -54,7 +56,7 @@ type Profile = {
 export default function Home() {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [outfitId, setOutfitId] = useState<string>(OUTFITS[0].id);
-  const [loading, setLoading] = useState<string>("initializing...");
+  const [loading, setLoading] = useState<string | null>("initializing...");
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile>({
     gender: "male",
@@ -175,7 +177,7 @@ export default function Home() {
       if (outfit.kind === "procedural") {
         // If we have the mannequin, clone it and recolor as a body overlay for a human-like silhouette
         if (outfit.id === "body-overlay" && avatarRef.current) {
-          const cloned = clone(avatarRef.current);
+          const cloned = SkeletonUtils.clone(avatarRef.current);
           cloned.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
               const mesh = child as THREE.Mesh;
@@ -191,6 +193,29 @@ export default function Home() {
             }
           });
           cloned.scale.multiplyScalar(1.01);
+          outfitRef.current = cloned;
+          avatarRef.current.add(cloned);
+          fitCameraToObject(camera, controls, avatarRef.current);
+          setLoading(null);
+          return;
+        }
+
+        if (outfit.id === "coat" && avatarRef.current) {
+          const cloned = SkeletonUtils.clone(avatarRef.current);
+          cloned.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              const mesh = child as THREE.Mesh;
+              mesh.material = new THREE.MeshStandardMaterial({
+                color: 0x2a3b55, // Dark blue
+                metalness: 0.1,
+                roughness: 0.6,
+                side: THREE.DoubleSide,
+              });
+              mesh.castShadow = true;
+              mesh.receiveShadow = true;
+            }
+          });
+          cloned.scale.multiplyScalar(1.03);
           outfitRef.current = cloned;
           avatarRef.current.add(cloned);
           fitCameraToObject(camera, controls, avatarRef.current);
@@ -299,7 +324,6 @@ export default function Home() {
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.physicallyCorrectLights = true;
     mount.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
