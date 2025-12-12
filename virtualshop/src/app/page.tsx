@@ -99,65 +99,6 @@ export default function Home() {
     [],
   );
 
-  const loadAvatarFromUrl = useCallback(
-    (url: string) => {
-      const controls = controlsRef.current;
-      const camera = cameraRef.current;
-      if (!controls || !avatarRef.current || !camera) return;
-
-      setLoading("loading avatar...");
-      setError(null);
-
-      const dracoLoader = new DRACOLoader();
-      dracoLoader.setDecoderPath(
-        "https://www.gstatic.com/draco/versioned/decoders/1.5.6/",
-      );
-      const gltfLoader = new GLTFLoader();
-      gltfLoader.setDRACOLoader(dracoLoader);
-
-      gltfLoader.load(
-        url,
-        (gltf) => {
-          const model = gltf.scene;
-          model.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-              const mesh = child as THREE.Mesh;
-              mesh.castShadow = true;
-              mesh.receiveShadow = true;
-            }
-          });
-
-          // Re-center model: center on XZ, place feet on Y=0
-          const box = new THREE.Box3().setFromObject(model);
-          const center = new THREE.Vector3();
-          box.getCenter(center);
-          model.position.set(-center.x, -box.min.y, -center.z);
-
-          if (avatarRef.current) {
-            if (avatarModelRef.current) {
-              avatarRef.current.remove(avatarModelRef.current);
-            }
-            if (outfitRef.current) {
-              avatarRef.current.remove(outfitRef.current);
-              outfitRef.current = null;
-            }
-            avatarModelRef.current = model;
-            avatarRef.current.add(model);
-            fitCameraToObject(camera, controls, avatarRef.current);
-          }
-          setLoading(null);
-        },
-        undefined,
-        (err) => {
-          console.error("Avatar load error", err);
-          setError("아바타 로드 실패");
-          setLoading(null);
-        },
-      );
-    },
-    [fitCameraToObject],
-  );
-
   const loadOutfit = useCallback(
     (outfit: OutfitOption) => {
       const controls = controlsRef.current;
@@ -176,8 +117,8 @@ export default function Home() {
       // Procedural outfits
       if (outfit.kind === "procedural") {
         // If we have the mannequin, clone it and recolor as a body overlay for a human-like silhouette
-        if (outfit.id === "body-overlay" && avatarRef.current) {
-          const cloned = SkeletonUtils.clone(avatarRef.current);
+        if (outfit.id === "body-overlay" && avatarModelRef.current) {
+          const cloned = SkeletonUtils.clone(avatarModelRef.current);
           cloned.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
               const mesh = child as THREE.Mesh;
@@ -200,8 +141,8 @@ export default function Home() {
           return;
         }
 
-        if (outfit.id === "coat" && avatarRef.current) {
-          const cloned = SkeletonUtils.clone(avatarRef.current);
+        if (outfit.id === "coat" && avatarModelRef.current) {
+          const cloned = SkeletonUtils.clone(avatarModelRef.current);
           cloned.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
               const mesh = child as THREE.Mesh;
@@ -299,6 +240,71 @@ export default function Home() {
       );
     },
     [fitCameraToObject],
+  );
+
+  const loadAvatarFromUrl = useCallback(
+    (url: string) => {
+      const controls = controlsRef.current;
+      const camera = cameraRef.current;
+      if (!controls || !avatarRef.current || !camera) return;
+
+      setLoading("loading avatar...");
+      setError(null);
+
+      const dracoLoader = new DRACOLoader();
+      dracoLoader.setDecoderPath(
+        "https://www.gstatic.com/draco/versioned/decoders/1.5.6/",
+      );
+      const gltfLoader = new GLTFLoader();
+      gltfLoader.setDRACOLoader(dracoLoader);
+
+      gltfLoader.load(
+        url,
+        (gltf) => {
+          const model = gltf.scene;
+          model.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              const mesh = child as THREE.Mesh;
+              mesh.castShadow = true;
+              mesh.receiveShadow = true;
+            }
+          });
+
+          // Re-center model: center on XZ, place feet on Y=0
+          const box = new THREE.Box3().setFromObject(model);
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+          model.position.set(-center.x, -box.min.y, -center.z);
+
+          if (avatarRef.current) {
+            if (avatarModelRef.current) {
+              avatarRef.current.remove(avatarModelRef.current);
+            }
+            if (outfitRef.current) {
+              avatarRef.current.remove(outfitRef.current);
+              outfitRef.current = null;
+            }
+            avatarModelRef.current = model;
+            avatarRef.current.add(model);
+            fitCameraToObject(camera, controls, avatarRef.current);
+          }
+          setLoading(null);
+
+          // Re-apply currently selected outfit
+          const currentOutfit = OUTFITS.find((o) => o.id === outfitId);
+          if (currentOutfit) {
+            loadOutfit(currentOutfit);
+          }
+        },
+        undefined,
+        (err) => {
+          console.error("Avatar load error", err);
+          setError("아바타 로드 실패");
+          setLoading(null);
+        },
+      );
+    },
+    [fitCameraToObject, loadOutfit, outfitId],
   );
 
   useEffect(() => {
@@ -466,207 +472,251 @@ export default function Home() {
     return () => window.removeEventListener("message", handleMessage);
   }, [loadAvatarFromUrl]);
 
+  const [sidebarTab, setSidebarTab] = useState<"clothes" | "body">("clothes");
+
   return (
-    <div className="min-h-screen bg-[#0b0b10] text-white">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8">
-        <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.2em] text-zinc-400">
-              Web VTO Minimal Demo
-            </p>
-            <h1 className="text-2xl font-semibold text-white">
-              Avatar + Outfit Loader (Three.js)
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <select
-              className="rounded-md border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none"
-              value={outfitId}
-              onChange={(e) => setOutfitId(e.target.value)}
-              aria-label="Select outfit"
-            >
-              {OUTFITS.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <button
-              className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-zinc-200"
-              onClick={() => {
-                const selected = OUTFITS.find((o) => o.id === outfitId);
-                if (selected) loadOutfit(selected);
-              }}
-            >
-              Load outfit
-            </button>
-            <button
-              className="rounded-md border border-white/30 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
-              onClick={() => setCreatorOpen(true)}
-            >
-              Create avatar from selfie
-            </button>
-          </div>
-        </header>
+    <div className="flex h-screen w-screen overflow-hidden bg-[#0b0b10] text-white">
+      {/* Left: 3D Canvas */}
+      <div className="relative flex-1 bg-gradient-to-b from-[#12121c] to-[#0b0b10]">
+        <div ref={mountRef} className="h-full w-full" />
 
-        <section className="grid gap-4 rounded-xl border border-white/10 bg-white/5 p-4 sm:grid-cols-2 md:grid-cols-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs uppercase tracking-wide text-zinc-400">
-              Gender
-            </label>
-            <select
-              className="rounded-md border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none"
-              value={profile.gender}
-              onChange={(e) =>
-                setProfile((prev) => ({ ...prev, gender: e.target.value as Profile["gender"] }))
-              }
-            >
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-            </select>
-          </div>
+        {/* Overlay Header / Branding */}
+        <div className="absolute left-6 top-6 pointer-events-none">
+          <p className="text-xs uppercase tracking-[0.2em] text-white/50">
+            Virtual Shop
+          </p>
+          <h1 className="text-xl font-bold text-white drop-shadow-md">
+            Fitting Room
+          </h1>
+        </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-xs uppercase tracking-wide text-zinc-400">
-              Height (cm)
-            </label>
-            <input
-              type="number"
-              min={140}
-              max={200}
-              value={profile.heightCm}
-              onChange={(e) =>
-                setProfile((prev) => ({
-                  ...prev,
-                  heightCm: Number(e.target.value) || prev.heightCm,
-                }))
-              }
-              className="rounded-md border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs uppercase tracking-wide text-zinc-400">
-              Weight (kg)
-            </label>
-            <input
-              type="number"
-              min={40}
-              max={120}
-              value={profile.weightKg}
-              onChange={(e) =>
-                setProfile((prev) => ({
-                  ...prev,
-                  weightKg: Number(e.target.value) || prev.weightKg,
-                }))
-              }
-              className="rounded-md border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs uppercase tracking-wide text-zinc-400">
-              Body Type
-            </label>
-            <select
-              className="rounded-md border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none"
-              value={profile.bodyType}
-              onChange={(e) =>
-                setProfile((prev) => ({
-                  ...prev,
-                  bodyType: e.target.value as BodyType,
-                }))
-              }
-            >
-              <option value="slim">Slim</option>
-              <option value="average">Average</option>
-              <option value="athletic">Athletic</option>
-              <option value="plus">Plus</option>
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs uppercase tracking-wide text-zinc-400">
-              Profile Summary
-            </label>
-            <div className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
-              {profile.gender === "male" ? "Male" : "Female"} · {profile.heightCm}cm ·{" "}
-              {profile.weightKg}kg · {profile.bodyType}
-            </div>
-          </div>
-        </section>
-
-        <section className="grid gap-3 rounded-xl border border-white/10 bg-white/5 p-4 sm:grid-cols-[2fr_1fr]">
-          <div className="flex flex-col gap-2">
-            <label className="text-xs uppercase tracking-wide text-zinc-400">
-              Avatar GLB URL
-            </label>
-            <div className="flex gap-2">
-              <input
-                value={customAvatarUrl}
-                onChange={(e) => setCustomAvatarUrl(e.target.value)}
-                placeholder="https://.../avatar.glb"
-                className="w-full rounded-md border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none"
-              />
-              <button
-                className="shrink-0 rounded-md bg-white px-3 py-2 text-sm font-semibold text-black transition hover:bg-zinc-200"
-                onClick={() => {
-                  if (customAvatarUrl.trim()) {
-                    loadAvatarFromUrl(customAvatarUrl.trim());
-                  }
-                }}
-              >
-                Load
-              </button>
-            </div>
-            <p className="text-xs text-white/60">
-              Ready Player Me 또는 임의 GLB URL을 붙여넣고 Load를 누르세요.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 rounded-md border border-white/10 bg-white/5 p-3 text-sm text-white/80">
-            <span className="text-xs uppercase tracking-wide text-zinc-400">Tips</span>
-            <ul className="list-disc space-y-1 pl-4">
-              <li>HTTPS에 호스팅된 GLB여야 합니다.</li>
-              <li>좌표계 Y-up, 스케일 1m 기준이 가장 적합합니다.</li>
-              <li>스켈레톤/본 이름이 다르면 의상 자동 피팅은 제한적입니다.</li>
-            </ul>
-          </div>
-        </section>
-
-        {creatorOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4">
-            <div className="relative h-[80vh] w-full max-w-5xl overflow-hidden rounded-xl border border-white/10 bg-[#0f0f19]">
-              <button
-                className="absolute right-3 top-3 rounded-md bg-white/10 px-3 py-1 text-sm text-white hover:bg-white/20"
-                onClick={() => setCreatorOpen(false)}
-              >
-                Close
-              </button>
-              <iframe
-                ref={creatorFrameRef}
-                title="Ready Player Me Creator"
-                src={RPM_CREATOR_URL}
-                allow="camera *; microphone *; clipboard-read; clipboard-write"
-                className="h-full w-full"
-              />
+        {/* Loading / Error States */}
+        {loading && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm transition-all duration-500">
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+              <p className="text-sm font-medium text-white tracking-wide uppercase">{loading}</p>
             </div>
           </div>
         )}
+        {error && (
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-lg bg-red-500/90 px-4 py-3 text-sm font-medium text-white shadow-lg backdrop-blur-md">
+            {error}
+          </div>
+        )}
+      </div>
 
-        <div className="relative h-[70vh] overflow-hidden rounded-xl border border-white/10 bg-gradient-to-b from-[#12121c] to-[#0b0b10]">
-          <div ref={mountRef} className="h-full w-full" />
-          {loading && (
-            <div className="pointer-events-none absolute left-0 top-0 flex h-full w-full items-center justify-center bg-black/30 text-sm text-white">
-              {loading}
+      {/* Right: Sidebar Panel */}
+      <aside className="item-center flex w-96 flex-col border-l border-white/10 bg-[#0f0f14] shadow-2xl z-10">
+        {/* Sidebar Header / Tabs */}
+        <div className="flex border-b border-white/10">
+          <button
+            onClick={() => setSidebarTab("clothes")}
+            className={`flex-1 py-4 text-sm font-semibold uppercase tracking-wide transition-colors ${sidebarTab === "clothes"
+              ? "border-b-2 border-white text-white"
+              : "text-zinc-500 hover:text-zinc-300"
+              }`}
+          >
+            Clothes
+          </button>
+          <button
+            onClick={() => setSidebarTab("body")}
+            className={`flex-1 py-4 text-sm font-semibold uppercase tracking-wide transition-colors ${sidebarTab === "body"
+              ? "border-b-2 border-white text-white"
+              : "text-zinc-500 hover:text-zinc-300"
+              }`}
+          >
+            Body & Avatar
+          </button>
+        </div>
+
+        {/* Sidebar Content */}
+        <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
+          {sidebarTab === "clothes" && (
+            <div className="flex flex-col gap-6">
+              <div className="space-y-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                  Select Outfit
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {OUTFITS.map((item) => {
+                    const isActive = outfitId === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setOutfitId(item.id);
+                          const selected = OUTFITS.find((o) => o.id === item.id);
+                          if (selected) loadOutfit(selected);
+                        }}
+                        className={`group relative flex aspect-[3/4] flex-col items-center justify-end overflow-hidden rounded-xl border transition-all duration-300 ${isActive
+                          ? "border-white bg-white/10 ring-1 ring-white/50"
+                          : "border-white/5 bg-white/5 hover:border-white/20 hover:bg-white/10"
+                          }`}
+                      >
+                        {/* Placeholder for Outfit Image */}
+                        <div className="absolute inset-0 flex items-center justify-center text-4xl opacity-20 transition-opacity group-hover:opacity-40">
+                          {item.id.includes("shirt") ? "👕" : item.id.includes("coat") ? "🧥" : "👗"}
+                        </div>
+
+                        <div className="relative w-full bg-gradient-to-t from-black/90 to-transparent p-3 pt-8 text-center">
+                          <span className={`block text-xs font-medium ${isActive ? "text-white" : "text-zinc-300"}`}>
+                            {item.label}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
-          {error && (
-            <div className="absolute bottom-4 left-4 rounded-md bg-red-500/80 px-3 py-2 text-xs text-white shadow-lg">
-              {error}
+
+          {sidebarTab === "body" && (
+            <div className="flex flex-col gap-8">
+              {/* Profile Config section reused with better styling */}
+              <div className="space-y-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                  Measurements
+                </h3>
+
+                {/* Gender */}
+                <div className="space-y-2">
+                  <label className="text-xs text-zinc-400">Gender</label>
+                  <div className="grid grid-cols-2 gap-2 rounded-lg bg-white/5 p-1">
+                    {(["male", "female"] as const).map((g) => (
+                      <button
+                        key={g}
+                        onClick={() => setProfile(p => ({ ...p, gender: g }))}
+                        className={`rounded-md py-2 text-xs font-medium capitalize transition-all ${profile.gender === g
+                          ? "bg-white text-black shadow-sm"
+                          : "text-zinc-400 hover:text-white"
+                          }`}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Body Type */}
+                <div className="space-y-2">
+                  <label className="text-xs text-zinc-400">Body Type</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {["slim", "average", "athletic", "plus"].map(val => (
+                      <button
+                        key={val}
+                        onClick={() => setProfile(p => ({ ...p, bodyType: val as BodyType }))}
+                        className={`rounded-md border p-2 text-xs capitalize transition-all ${profile.bodyType === val
+                          ? "border-white bg-white/10 text-white"
+                          : "border-white/10 bg-transparent text-zinc-400 hover:border-white/30"
+                          }`}
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sliders for Height/Weight */}
+                <div className="space-y-4 pt-2">
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Height</span>
+                      <span className="text-white">{profile.heightCm} cm</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={140}
+                      max={200}
+                      value={profile.heightCm}
+                      onChange={(e) => setProfile(p => ({ ...p, heightCm: Number(e.target.value) }))}
+                      className="h-1.5 w-full appearance-none rounded-full bg-white/10 outline-none hover:bg-white/20 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Weight</span>
+                      <span className="text-white">{profile.weightKg} kg</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={40}
+                      max={120}
+                      value={profile.weightKg}
+                      onChange={(e) => setProfile(p => ({ ...p, weightKg: Number(e.target.value) }))}
+                      className="h-1.5 w-full appearance-none rounded-full bg-white/10 outline-none hover:bg-white/20 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Avatar Section */}
+              <div className="space-y-4 border-t border-white/10 pt-6">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                  Custom Avatar
+                </h3>
+                <button
+                  className="w-full rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-lg transition-transform active:scale-95 hover:opacity-90"
+                  onClick={() => setCreatorOpen(true)}
+                >
+                  Create from Selfie
+                </button>
+
+                <div className="space-y-2">
+                  <label className="text-xs text-zinc-400">Load GLB URL</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={customAvatarUrl}
+                      onChange={(e) => setCustomAvatarUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-white/30"
+                    />
+                    <button
+                      onClick={() => {
+                        if (customAvatarUrl.trim()) loadAvatarFromUrl(customAvatarUrl.trim());
+                      }}
+                      className="rounded-md bg-white/10 px-3 py-2 text-xs font-medium text-white hover:bg-white/20"
+                    >
+                      →
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
-      </div>
+
+        {/* Footer info or CTA */}
+        <div className="border-t border-white/10 bg-white/5 p-4">
+          <button className="w-full rounded-lg bg-white py-3 text-sm font-bold text-black shadow-lg transition-transform hover:bg-zinc-200 active:scale-95">
+            Add to Cart
+          </button>
+        </div>
+      </aside>
+
+      {/* Fullscreen Loading Overlay (Initial) - Optional if we want to block interaction */}
+
+      {/* Ready Player Me Iframe Overlay */}
+      {creatorOpen && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
+          <div className="relative h-[85vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-[#0f0f19] shadow-2xl">
+            <button
+              className="absolute right-4 top-4 z-10 rounded-full bg-black/50 p-2 text-white hover:bg-white/20 backdrop-blur-md"
+              onClick={() => setCreatorOpen(false)}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+            <iframe
+              ref={creatorFrameRef}
+              title="Ready Player Me Creator"
+              src={RPM_CREATOR_URL}
+              allow="camera *; microphone *; clipboard-read; clipboard-write"
+              className="h-full w-full"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
