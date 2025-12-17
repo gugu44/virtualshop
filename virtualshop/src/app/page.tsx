@@ -26,7 +26,7 @@ type OutfitOption =
 
 // Mannequin-style humanoid (rigged) for clothing placement
 const AVATAR_URL =
-  "https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models/2.0/RiggedFigure/glTF-Binary/RiggedFigure.glb";
+  "https://models.readyplayer.me/6940cd65100ae875d5bc78fd.glb";
 
 const OUTFITS: OutfitOption[] = [
   {
@@ -59,6 +59,16 @@ type Profile = {
   bodyType: BodyType;
 };
 
+const DEFAULT_OUTFIT_TRANSFORM = {
+  posX: 0,
+  posY: 0,
+  posZ: 0,
+  scale: 1,
+  rotXDeg: 0,
+  rotYDeg: 0,
+  rotZDeg: 0,
+};
+
 export default function Home() {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [outfitId, setOutfitId] = useState<string | null>(null);
@@ -82,9 +92,122 @@ export default function Home() {
 
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [customAvatarUrl, setCustomAvatarUrl] = useState("");
-  // const [customOutfitUrl, setCustomOutfitUrl] = useState("");
+  const [customOutfitUrl, setCustomOutfitUrl] = useState("");
   const [generatedOutfits, setGeneratedOutfits] = useState<OutfitOption[]>([]);
   const creatorFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const outfitFileInputRef = useRef<HTMLInputElement | null>(null);
+  const lastObjectUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (lastObjectUrlRef.current) {
+        URL.revokeObjectURL(lastObjectUrlRef.current);
+        lastObjectUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  const [outfitTransform, setOutfitTransform] = useState(DEFAULT_OUTFIT_TRANSFORM);
+  const [fitStep, setFitStep] = useState<"coarse" | "normal" | "fine">("normal");
+  const outfitBaseTransformRef = useRef<{
+    position: THREE.Vector3;
+    scale: THREE.Vector3;
+    rotation: THREE.Euler;
+  } | null>(null);
+
+  const stepValue = fitStep === "fine" ? 0.001 : fitStep === "coarse" ? 0.05 : 0.01;
+  const stepDeg = fitStep === "fine" ? 0.5 : fitStep === "coarse" ? 5 : 1;
+
+  const captureOutfitBaseTransform = useCallback((object: THREE.Object3D) => {
+    outfitBaseTransformRef.current = {
+      position: object.position.clone(),
+      scale: object.scale.clone(),
+      rotation: object.rotation.clone(),
+    };
+  }, []);
+
+  const autoFitOutfitToAvatar = useCallback(() => {
+    const outfit = outfitRef.current;
+    const avatarModel = avatarModelRef.current;
+    if (!outfit || !avatarModel) {
+      setError("Auto Fit 실패: 아바타/의상이 아직 로드되지 않았습니다.");
+      return;
+    }
+
+    setError(null);
+
+    const avatarBox = new THREE.Box3().setFromObject(avatarModel);
+    const outfitBox = new THREE.Box3().setFromObject(outfit);
+
+    const avatarSize = new THREE.Vector3();
+    const outfitSize = new THREE.Vector3();
+    avatarBox.getSize(avatarSize);
+    outfitBox.getSize(outfitSize);
+
+    const safe = (n: number) => (Number.isFinite(n) && n > 0 ? n : 1);
+    const scaleFactor =
+      Math.min(
+        safe(avatarSize.x) / safe(outfitSize.x),
+        safe(avatarSize.y) / safe(outfitSize.y),
+        safe(avatarSize.z) / safe(outfitSize.z),
+      ) * 0.95;
+
+    outfit.scale.multiplyScalar(scaleFactor);
+
+    const avatarCenter = new THREE.Vector3();
+    const outfitCenter = new THREE.Vector3();
+    avatarBox.getCenter(avatarCenter);
+    new THREE.Box3().setFromObject(outfit).getCenter(outfitCenter);
+
+    const delta = new THREE.Vector3().subVectors(avatarCenter, outfitCenter);
+    outfit.position.add(delta);
+
+    setOutfitTransform(DEFAULT_OUTFIT_TRANSFORM);
+    captureOutfitBaseTransform(outfit);
+  }, [captureOutfitBaseTransform]);
+
+  const nudgeFit = useCallback((delta: Partial<typeof DEFAULT_OUTFIT_TRANSFORM>) => {
+    setOutfitTransform((t) => ({
+      ...t,
+      ...delta,
+      posX: t.posX + (delta.posX ?? 0),
+      posY: t.posY + (delta.posY ?? 0),
+      posZ: t.posZ + (delta.posZ ?? 0),
+      scale: t.scale + (delta.scale ?? 0),
+      rotXDeg: t.rotXDeg + (delta.rotXDeg ?? 0),
+      rotYDeg: t.rotYDeg + (delta.rotYDeg ?? 0),
+      rotZDeg: t.rotZDeg + (delta.rotZDeg ?? 0),
+    }));
+  }, []);
+
+  useEffect(() => {
+    const outfit = outfitRef.current;
+    if (!outfit) return;
+
+    const base = outfitBaseTransformRef.current ?? {
+      position: outfit.position.clone(),
+      scale: outfit.scale.clone(),
+      rotation: outfit.rotation.clone(),
+    };
+    outfitBaseTransformRef.current = base;
+
+    outfit.position.set(
+      base.position.x + outfitTransform.posX,
+      base.position.y + outfitTransform.posY,
+      base.position.z + outfitTransform.posZ,
+    );
+
+    outfit.scale.set(
+      base.scale.x * outfitTransform.scale,
+      base.scale.y * outfitTransform.scale,
+      base.scale.z * outfitTransform.scale,
+    );
+
+    outfit.rotation.set(base.rotation.x, base.rotation.y, base.rotation.z);
+    outfit.rotation.x += THREE.MathUtils.degToRad(outfitTransform.rotXDeg);
+    outfit.rotation.y += THREE.MathUtils.degToRad(outfitTransform.rotYDeg);
+    outfit.rotation.z += THREE.MathUtils.degToRad(outfitTransform.rotZDeg);
+  }, [outfitTransform]);
 
   const fitCameraToObject = useCallback(
     (camera: THREE.PerspectiveCamera, controls: OrbitControls, object: THREE.Object3D) => {
@@ -190,6 +313,8 @@ export default function Home() {
 
           outfitRef.current = mesh;
           avatarRef.current?.add(mesh);
+          setOutfitTransform(DEFAULT_OUTFIT_TRANSFORM);
+          captureOutfitBaseTransform(mesh);
 
           setLoading(null);
         },
@@ -201,7 +326,7 @@ export default function Home() {
         }
       );
     },
-    []
+    [captureOutfitBaseTransform]
   );
 
   const loadOutfit = useCallback(
@@ -247,6 +372,8 @@ export default function Home() {
           cloned.scale.multiplyScalar(1.01);
           outfitRef.current = cloned;
           avatarRef.current.add(cloned);
+          setOutfitTransform(DEFAULT_OUTFIT_TRANSFORM);
+          captureOutfitBaseTransform(cloned);
           fitCameraToObject(camera, controls, avatarRef.current);
           setLoading(null);
           return;
@@ -270,6 +397,8 @@ export default function Home() {
           cloned.scale.multiplyScalar(1.03);
           outfitRef.current = cloned;
           avatarRef.current.add(cloned);
+          setOutfitTransform(DEFAULT_OUTFIT_TRANSFORM);
+          captureOutfitBaseTransform(cloned);
           fitCameraToObject(camera, controls, avatarRef.current);
           setLoading(null);
           return;
@@ -321,6 +450,8 @@ export default function Home() {
 
         outfitRef.current = group;
         avatarRef.current.add(group);
+        setOutfitTransform(DEFAULT_OUTFIT_TRANSFORM);
+        captureOutfitBaseTransform(group);
         fitCameraToObject(camera, controls, avatarRef.current);
         setLoading(null);
         return;
@@ -346,6 +477,8 @@ export default function Home() {
             }
           });
           avatarRef.current?.add(gltf.scene);
+          setOutfitTransform(DEFAULT_OUTFIT_TRANSFORM);
+          captureOutfitBaseTransform(gltf.scene);
           if (avatarRef.current) {
             fitCameraToObject(camera, controls, avatarRef.current);
           }
@@ -354,12 +487,19 @@ export default function Home() {
         undefined,
         (err) => {
           console.error("Outfit load error", err);
-          setError("의상 로드 실패");
+          const msg = String((err as any)?.message ?? err ?? "");
+          if (/draco|decoder|No DRACOLoader instance/i.test(msg)) {
+            setError(
+              "의상 로드 실패: DRACO 압축 GLB일 수 있어요. (1) DRACO 디코더를 받을 수 있게 네트워크 허용 또는 (2) 디코더를 public 경로로 제공해야 합니다.",
+            );
+          } else {
+            setError("의상 로드 실패 (GLB URL/CORS/파일 손상 가능)");
+          }
           setLoading(null);
         }
       );
     },
-    [fitCameraToObject, loadTextureOutfit]
+    [captureOutfitBaseTransform, fitCameraToObject, loadTextureOutfit]
   );
 
   const loadAvatarFromUrl = useCallback(
@@ -429,7 +569,14 @@ export default function Home() {
         undefined,
         (err) => {
           console.error("Avatar load error", err);
-          setError("아바타 로드 실패");
+          const msg = String((err as any)?.message ?? err ?? "");
+          if (/draco|decoder|No DRACOLoader instance/i.test(msg)) {
+            setError(
+              "아바타 로드 실패: DRACO 압축 GLB일 수 있어요. (1) DRACO 디코더를 받을 수 있게 네트워크 허용 또는 (2) 디코더를 public 경로로 제공해야 합니다.",
+            );
+          } else {
+            setError("아바타 로드 실패 (GLB URL/CORS/파일 손상 가능)");
+          }
           setLoading(null);
         },
       );
@@ -644,6 +791,15 @@ export default function Home() {
         {/* Sidebar Header / Tabs */}
         <div className="flex border-b border-white/10">
           <button
+            onClick={() => setSidebarTab("clothes")}
+            className={`flex-1 py-4 text-sm font-semibold uppercase tracking-wide transition-colors ${sidebarTab === "clothes"
+              ? "border-b-2 border-white text-white"
+              : "text-zinc-500 hover:text-zinc-300"
+              }`}
+          >
+            Clothes
+          </button>
+          <button
             onClick={() => setSidebarTab("magic")}
             className={`flex-1 py-4 text-sm font-semibold uppercase tracking-wide transition-colors ${sidebarTab === "magic"
               ? "border-b-2 border-primary text-white"
@@ -665,6 +821,344 @@ export default function Home() {
 
         {/* Sidebar Content */}
         <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
+          {sidebarTab === "clothes" && (
+            <div className="flex flex-col gap-8">
+              <div className="space-y-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                  Presets
+                </h3>
+                <p className="text-xs text-zinc-400">
+                  아래 프리셋은 “진짜 의상 리깅”이 아니라, 아바타 위에 오버레이로 올리는 데모입니다.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {OUTFITS.map((item) => {
+                    const isActive = outfitId === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setOutfitId(item.id);
+                          loadOutfit(item);
+                        }}
+                        className={`rounded-xl border px-3 py-3 text-left text-xs font-medium transition-all ${isActive
+                          ? "border-white bg-white/10 ring-1 ring-white/40"
+                          : "border-white/10 bg-white/5 hover:border-white/30 hover:bg-white/10"
+                          }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-4 border-t border-white/10 pt-6">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                  Load Outfit GLB
+                </h3>
+                <div className="space-y-2">
+                  <label className="text-xs text-zinc-400">GLB URL (의상)</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={customOutfitUrl}
+                      onChange={(e) => setCustomOutfitUrl(e.target.value)}
+                      placeholder="https://.../outfit.glb"
+                      className="w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-xs text-white placeholder-zinc-600 outline-none focus:border-white/30"
+                    />
+                    <button
+                      onClick={() => {
+                        const url = customOutfitUrl.trim();
+                        if (!url) return;
+                        const option: OutfitOption = {
+                          id: `glb-${Date.now()}`,
+                          label: "Custom GLB",
+                          kind: "glb",
+                          url,
+                        };
+                        setOutfitId(option.id);
+                        loadOutfit(option);
+                      }}
+                      className="rounded-md bg-white/10 px-3 py-2 text-xs font-medium text-white hover:bg-white/20"
+                    >
+                      Wear
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-2">
+                    <input
+                      ref={outfitFileInputRef}
+                      type="file"
+                      accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        setError(null);
+                        setLoading("loading outfit file...");
+
+                        if (lastObjectUrlRef.current) {
+                          URL.revokeObjectURL(lastObjectUrlRef.current);
+                          lastObjectUrlRef.current = null;
+                        }
+
+                        const objectUrl = URL.createObjectURL(file);
+                        lastObjectUrlRef.current = objectUrl;
+
+                        const option: OutfitOption = {
+                          id: `file-${Date.now()}`,
+                          label: file.name,
+                          kind: "glb",
+                          url: objectUrl,
+                        };
+                        setOutfitId(option.id);
+                        loadOutfit(option);
+
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                    <button
+                      onClick={() => outfitFileInputRef.current?.click()}
+                      className="w-full rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/20"
+                    >
+                      Upload GLB File
+                    </button>
+                  </div>
+                  <p className="text-[11px] leading-4 text-zinc-500">
+                    참고: 자연스럽게 “입히려면” 의상 GLB가 아바타 스켈레톤과 호환되는 SkinnedMesh여야 합니다. 아니면 아래 오프셋으로 대략 맞추는 방식만 가능합니다.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4 border-t border-white/10 pt-6">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                  Fit (Offset)
+                </h3>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex gap-2">
+                      {(["coarse", "normal", "fine"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setFitStep(mode)}
+                          className={`rounded-md px-3 py-1 text-[11px] font-semibold uppercase tracking-wide transition-all ${fitStep === mode
+                            ? "bg-white text-black"
+                            : "bg-white/10 text-white hover:bg-white/20"
+                            }`}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={autoFitOutfitToAvatar}
+                      className="rounded-md bg-blue-600/80 px-3 py-1 text-[11px] font-semibold text-white hover:bg-blue-600"
+                    >
+                      Auto Fit
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Position X</span>
+                      <span className="text-white">{outfitTransform.posX.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-2}
+                      max={2}
+                      step={stepValue}
+                      value={outfitTransform.posX}
+                      onChange={(e) =>
+                        setOutfitTransform((t) => ({ ...t, posX: Number(e.target.value) }))
+                      }
+                      className="h-1.5 w-full appearance-none rounded-full bg-white/10 outline-none hover:bg-white/20 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Position Y</span>
+                      <span className="text-white">{outfitTransform.posY.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-2}
+                      max={2}
+                      step={stepValue}
+                      value={outfitTransform.posY}
+                      onChange={(e) =>
+                        setOutfitTransform((t) => ({ ...t, posY: Number(e.target.value) }))
+                      }
+                      className="h-1.5 w-full appearance-none rounded-full bg-white/10 outline-none hover:bg-white/20 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Position Z</span>
+                      <span className="text-white">{outfitTransform.posZ.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-2}
+                      max={2}
+                      step={stepValue}
+                      value={outfitTransform.posZ}
+                      onChange={(e) =>
+                        setOutfitTransform((t) => ({ ...t, posZ: Number(e.target.value) }))
+                      }
+                      className="h-1.5 w-full appearance-none rounded-full bg-white/10 outline-none hover:bg-white/20 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Scale</span>
+                      <span className="text-white">{outfitTransform.scale.toFixed(2)}x</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0.01}
+                      max={10}
+                      step={stepValue}
+                      value={outfitTransform.scale}
+                      onChange={(e) =>
+                        setOutfitTransform((t) => ({ ...t, scale: Number(e.target.value) }))
+                      }
+                      className="h-1.5 w-full appearance-none rounded-full bg-white/10 outline-none hover:bg-white/20 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Rotate X</span>
+                      <span className="text-white">{outfitTransform.rotXDeg.toFixed(0)}°</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-180}
+                      max={180}
+                      step={stepDeg}
+                      value={outfitTransform.rotXDeg}
+                      onChange={(e) =>
+                        setOutfitTransform((t) => ({ ...t, rotXDeg: Number(e.target.value) }))
+                      }
+                      className="h-1.5 w-full appearance-none rounded-full bg-white/10 outline-none hover:bg-white/20 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Rotate Y</span>
+                      <span className="text-white">{outfitTransform.rotYDeg.toFixed(0)}°</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-180}
+                      max={180}
+                      step={stepDeg}
+                      value={outfitTransform.rotYDeg}
+                      onChange={(e) =>
+                        setOutfitTransform((t) => ({ ...t, rotYDeg: Number(e.target.value) }))
+                      }
+                      className="h-1.5 w-full appearance-none rounded-full bg-white/10 outline-none hover:bg-white/20 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Rotate Z</span>
+                      <span className="text-white">{outfitTransform.rotZDeg.toFixed(0)}°</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-180}
+                      max={180}
+                      step={stepDeg}
+                      value={outfitTransform.rotZDeg}
+                      onChange={(e) =>
+                        setOutfitTransform((t) => ({ ...t, rotZDeg: Number(e.target.value) }))
+                      }
+                      className="h-1.5 w-full appearance-none rounded-full bg-white/10 outline-none hover:bg-white/20 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 pt-2">
+                    <button
+                      onClick={() => nudgeFit({ posY: stepValue })}
+                      className="rounded-md bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20"
+                    >
+                      Y+
+                    </button>
+                    <button
+                      onClick={() => nudgeFit({ posZ: -stepValue })}
+                      className="rounded-md bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20"
+                    >
+                      Z-
+                    </button>
+                    <button
+                      onClick={() => nudgeFit({ scale: stepValue })}
+                      className="rounded-md bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20"
+                    >
+                      S+
+                    </button>
+
+                    <button
+                      onClick={() => nudgeFit({ posX: -stepValue })}
+                      className="rounded-md bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20"
+                    >
+                      X-
+                    </button>
+                    <button
+                      onClick={() => setOutfitTransform(DEFAULT_OUTFIT_TRANSFORM)}
+                      className="rounded-md bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={() => nudgeFit({ posX: stepValue })}
+                      className="rounded-md bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20"
+                    >
+                      X+
+                    </button>
+
+                    <button
+                      onClick={() => nudgeFit({ posY: -stepValue })}
+                      className="rounded-md bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20"
+                    >
+                      Y-
+                    </button>
+                    <button
+                      onClick={() => nudgeFit({ posZ: stepValue })}
+                      className="rounded-md bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20"
+                    >
+                      Z+
+                    </button>
+                    <button
+                      onClick={() => nudgeFit({ scale: -stepValue })}
+                      className="rounded-md bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20"
+                    >
+                      S-
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setOutfitTransform(DEFAULT_OUTFIT_TRANSFORM);
+                      setError(null);
+                    }}
+                    className="w-full rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/20"
+                  >
+                    Reset Fit
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {sidebarTab === "magic" && (
             <div className="flex flex-col gap-6">
               <div className="space-y-4">
